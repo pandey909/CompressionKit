@@ -588,6 +588,7 @@ private extension UIImage {
             
             let originalPixelSize = pixelSize
             let alphaDetected = hasAlphaChannel
+            let useDirectCGImageDraw = !alphaDetected && imageOrientation == .up && cgImage != nil
             let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
             // mainRender is the compression hot path. Keep this render simple, opaque, scale=1,
             // and avoid extra image conversions because large PNGs spend most time here.
@@ -595,12 +596,7 @@ private extension UIImage {
                 let rect = CGRect(origin: .zero, size: targetSize)
                 let cgContext = context.cgContext
                 
-                if alphaDetected {
-                    cgContext.setFillColor(UIColor.white.cgColor)
-                    cgContext.fill(rect)
-                }
-                
-                if imageOrientation == .up, let cgImage {
+                if useDirectCGImageDraw, let cgImage {
                     cgContext.interpolationQuality = .high
                     cgContext.saveGState()
                     cgContext.translateBy(x: 0, y: targetSize.height)
@@ -608,16 +604,15 @@ private extension UIImage {
                     cgContext.draw(cgImage, in: rect)
                     cgContext.restoreGState()
                 } else {
-                    if !alphaDetected {
-                        cgContext.setFillColor(UIColor.white.cgColor)
-                        cgContext.fill(rect)
-                    }
+                    cgContext.setFillColor(UIColor.white.cgColor)
+                    cgContext.fill(rect)
                     draw(in: rect)
                 }
             }
             
             #if DEBUG
-            print("[CompressionKit][RenderDebug] source=uiimage original=\(Int(originalPixelSize.width))x\(Int(originalPixelSize.height)) target=\(Int(targetSize.width))x\(Int(targetSize.height)) alpha=\(alphaDetected) opaque=true scale=1")
+            let renderPath = useDirectCGImageDraw ? "cgImage" : "uiImageDraw"
+            print("[CompressionKit][RenderDebug] source=uiimage path=\(renderPath) original=\(Int(originalPixelSize.width))x\(Int(originalPixelSize.height)) target=\(Int(targetSize.width))x\(Int(targetSize.height)) alpha=\(alphaDetected) opaque=true scale=1")
             #endif
             
             return RenderedImage(image: outputImage, pixelSize: targetSize)
