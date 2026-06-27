@@ -14,13 +14,13 @@ A modern, high-performance video compression engine for iOS, written in Swift. I
 
 ## Version
 
-Current version: 1.0.0
+Current version: 1.1.0
 
 Swift Package Manager versions are published through Git tags. Create the release tag later after review:
 
 ```bash
-git tag 1.0.0
-git push origin 1.0.0
+git tag 1.1.0
+git push origin 1.1.0
 ```
 
 ---
@@ -252,6 +252,14 @@ For 4K high-FPS HDR portrait videos, most processing time is spent in `AVAssetRe
 ---
 
 ## Release Notes
+
+### 1.1.0
+
+- Optimized image compression pipeline.
+- Introduced dynamic worker pool with clamped parallel tasks to limit memory overhead.
+- Cached pre-rendered images to avoid redundant resizing for quality attempts.
+- Derived thumbnail directly from successful pre-rendered main image.
+- Encapsulated JPEG encoding attempts in autoreleasepools.
 
 ### 1.0.0
 

@@ -15,8 +15,14 @@ final class ImageCompressorTests: XCTestCase {
         XCTAssertEqual(result.fileExtension, "jpg")
         XCTAssertLessThanOrEqual(result.mainData.count, 2 * 1024 * 1024)
         XCTAssertLessThanOrEqual(result.thumbnailData?.count ?? Int.max, 350 * 1024)
+        XCTAssertLessThanOrEqual(result.previewThumbnailData?.count ?? Int.max, 150 * 1024)
         XCTAssertLessThanOrEqual(max(result.mainPixelSize.width, result.mainPixelSize.height), 2048)
         XCTAssertLessThanOrEqual(max(result.thumbnailPixelSize?.width ?? 0, result.thumbnailPixelSize?.height ?? 0), 720)
+        XCTAssertLessThanOrEqual(max(result.previewThumbnailPixelSize?.width ?? 0, result.previewThumbnailPixelSize?.height ?? 0), 360)
+        
+        let thumbnailCount = try XCTUnwrap(result.thumbnailData?.count)
+        let previewThumbnailCount = try XCTUnwrap(result.previewThumbnailData?.count)
+        XCTAssertLessThanOrEqual(previewThumbnailCount, thumbnailCount)
     }
     
     func testMultipleImageCompressionPreservesOrder() async {
@@ -76,6 +82,28 @@ final class ImageCompressorTests: XCTestCase {
         XCTAssertEqual(result.mimeType, "image/jpeg")
     }
     
+    func testPreviewThumbnailCanBeDisabled() async throws {
+        let options = ImageCompressionOptions(
+            mainMaxBytes: 2 * 1024 * 1024,
+            thumbnailMaxBytes: 350 * 1024,
+            mainPolicy: [ImageCompressionAttempt(maxLongEdge: 2048, quality: 0.85)],
+            thumbnailPolicy: [ImageCompressionAttempt(maxLongEdge: 720, quality: 0.75)],
+            format: "jpg",
+            mimeType: "image/jpeg",
+            fileExtension: "jpg"
+        )
+        let compressor = CompressionKit.ImageCompressor(options: options)
+        let image = makeImage(size: CGSize(width: 1024, height: 768), color: .orange)
+        
+        let result = try await compressor.compressImage(image)
+        
+        XCTAssertNotNil(result.thumbnailData)
+        XCTAssertNil(result.previewThumbnailData)
+        XCTAssertNil(result.previewThumbnailPixelSize)
+        XCTAssertNil(result.previewThumbnailQuality)
+        XCTAssertEqual(result.previewThumbnailAttempts, 0)
+    }
+    
     func testConcurrencyClampingLimits() {
         let compressorDefault = CompressionKit.ImageCompressor()
         XCTAssertEqual(compressorDefault.maxConcurrentTasks, 2)
@@ -99,4 +127,3 @@ final class ImageCompressorTests: XCTestCase {
     }
 }
 #endif
-

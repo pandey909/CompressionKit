@@ -19,6 +19,7 @@ public struct ImageCompressionOptions: Sendable, Equatable {
     public let thumbnailMaxBytes: Int?
     public let mainPolicy: [ImageCompressionAttempt]
     public let thumbnailPolicy: [ImageCompressionAttempt]
+    public let previewThumbnailOptions: ImageThumbnailOptions?
     public let format: String
     public let mimeType: String
     public let fileExtension: String
@@ -28,6 +29,7 @@ public struct ImageCompressionOptions: Sendable, Equatable {
         thumbnailMaxBytes: Int? = nil,
         mainPolicy: [ImageCompressionAttempt],
         thumbnailPolicy: [ImageCompressionAttempt] = [],
+        previewThumbnailOptions: ImageThumbnailOptions? = nil,
         format: String,
         mimeType: String,
         fileExtension: String
@@ -36,6 +38,7 @@ public struct ImageCompressionOptions: Sendable, Equatable {
         self.thumbnailMaxBytes = thumbnailMaxBytes
         self.mainPolicy = mainPolicy
         self.thumbnailPolicy = thumbnailPolicy
+        self.previewThumbnailOptions = previewThumbnailOptions
         self.format = format
         self.mimeType = mimeType
         self.fileExtension = fileExtension
@@ -59,6 +62,15 @@ public struct ImageCompressionOptions: Sendable, Equatable {
             ImageCompressionAttempt(maxLongEdge: 640, quality: 0.72),
             ImageCompressionAttempt(maxLongEdge: 640, quality: 0.65)
         ],
+        previewThumbnailOptions: ImageThumbnailOptions(
+            maxBytes: 150 * 1024,
+            policy: [
+                ImageCompressionAttempt(maxLongEdge: 360, quality: 0.70),
+                ImageCompressionAttempt(maxLongEdge: 360, quality: 0.65),
+                ImageCompressionAttempt(maxLongEdge: 320, quality: 0.65),
+                ImageCompressionAttempt(maxLongEdge: 320, quality: 0.60)
+            ]
+        ),
         format: "jpg",
         mimeType: "image/jpeg",
         fileExtension: "jpg"
@@ -67,15 +79,29 @@ public struct ImageCompressionOptions: Sendable, Equatable {
     public static let feedPost = post
 }
 
+public struct ImageThumbnailOptions: Sendable, Equatable {
+    public let maxBytes: Int
+    public let policy: [ImageCompressionAttempt]
+    
+    public init(maxBytes: Int, policy: [ImageCompressionAttempt]) {
+        self.maxBytes = maxBytes
+        self.policy = policy
+    }
+}
+
 public struct ImageCompressionResult: Sendable {
     public let mainData: Data
     public let thumbnailData: Data?
+    public let previewThumbnailData: Data?
     public let mainPixelSize: CGSize
     public let thumbnailPixelSize: CGSize?
+    public let previewThumbnailPixelSize: CGSize?
     public let mainQuality: CGFloat
     public let thumbnailQuality: CGFloat?
+    public let previewThumbnailQuality: CGFloat?
     public let mainAttempts: Int
     public let thumbnailAttempts: Int
+    public let previewThumbnailAttempts: Int
     public let format: String
     public let mimeType: String
     public let fileExtension: String
@@ -86,12 +112,16 @@ public struct ImageCompressionResult: Sendable {
     public init(
         mainData: Data,
         thumbnailData: Data?,
+        previewThumbnailData: Data? = nil,
         mainPixelSize: CGSize,
         thumbnailPixelSize: CGSize?,
+        previewThumbnailPixelSize: CGSize? = nil,
         mainQuality: CGFloat,
         thumbnailQuality: CGFloat?,
+        previewThumbnailQuality: CGFloat? = nil,
         mainAttempts: Int,
         thumbnailAttempts: Int,
+        previewThumbnailAttempts: Int = 0,
         format: String,
         mimeType: String,
         fileExtension: String,
@@ -101,12 +131,16 @@ public struct ImageCompressionResult: Sendable {
     ) {
         self.mainData = mainData
         self.thumbnailData = thumbnailData
+        self.previewThumbnailData = previewThumbnailData
         self.mainPixelSize = mainPixelSize
         self.thumbnailPixelSize = thumbnailPixelSize
+        self.previewThumbnailPixelSize = previewThumbnailPixelSize
         self.mainQuality = mainQuality
         self.thumbnailQuality = thumbnailQuality
+        self.previewThumbnailQuality = previewThumbnailQuality
         self.mainAttempts = mainAttempts
         self.thumbnailAttempts = thumbnailAttempts
+        self.previewThumbnailAttempts = previewThumbnailAttempts
         self.format = format
         self.mimeType = mimeType
         self.fileExtension = fileExtension
@@ -342,22 +376,41 @@ public struct ImageCompressor: Sendable {
             thumbnail = nil
         }
         
+        let previewThumbnail: JPEGOutput?
+        if let previewThumbnailOptions = options.previewThumbnailOptions {
+            let previewResult = try compressJPEG(
+                main.rendered.image,
+                maxBytes: previewThumbnailOptions.maxBytes,
+                policy: previewThumbnailOptions.policy,
+                renderTimingKeyPath: \.previewThumbnailRenderMs,
+                encodeTimingKeyPath: \.previewThumbnailEncodeMs,
+                timing: &timing
+            )
+            previewThumbnail = previewResult.output
+        } else {
+            previewThumbnail = nil
+        }
+        
         let totalMs = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
         timing.totalMs = totalMs
         #if DEBUG
         let label = debugLabel.map { "\($0) " } ?? ""
-        print("[CompressionKit][ImageTiming] \(label)mainRender=\(timing.mainRenderMs)ms mainEncode=\(timing.mainEncodeMs)ms thumbRender=\(timing.thumbRenderMs)ms thumbEncode=\(timing.thumbEncodeMs)ms total=\(timing.totalMs)ms source=data")
+        print("[CompressionKit][ImageTiming] \(label)mainRender=\(timing.mainRenderMs)ms mainEncode=\(timing.mainEncodeMs)ms thumbRender=\(timing.thumbRenderMs)ms thumbEncode=\(timing.thumbEncodeMs)ms previewThumbnailRender=\(timing.previewThumbnailRenderMs)ms previewThumbnailEncode=\(timing.previewThumbnailEncodeMs)ms total=\(timing.totalMs)ms source=data")
         #endif
         
         return ImageCompressionResult(
             mainData: main.output.data,
             thumbnailData: thumbnail?.data,
+            previewThumbnailData: previewThumbnail?.data,
             mainPixelSize: main.output.pixelSize,
             thumbnailPixelSize: thumbnail?.pixelSize,
+            previewThumbnailPixelSize: previewThumbnail?.pixelSize,
             mainQuality: main.output.quality,
             thumbnailQuality: thumbnail?.quality,
+            previewThumbnailQuality: previewThumbnail?.quality,
             mainAttempts: main.output.attempts,
             thumbnailAttempts: thumbnail?.attempts ?? 0,
+            previewThumbnailAttempts: previewThumbnail?.attempts ?? 0,
             format: options.format,
             mimeType: options.mimeType,
             fileExtension: options.fileExtension,
@@ -402,22 +455,41 @@ public struct ImageCompressor: Sendable {
             thumbnail = nil
         }
         
+        let previewThumbnail: JPEGOutput?
+        if let previewThumbnailOptions = options.previewThumbnailOptions {
+            let previewResult = try compressJPEG(
+                main.rendered.image,
+                maxBytes: previewThumbnailOptions.maxBytes,
+                policy: previewThumbnailOptions.policy,
+                renderTimingKeyPath: \.previewThumbnailRenderMs,
+                encodeTimingKeyPath: \.previewThumbnailEncodeMs,
+                timing: &timing
+            )
+            previewThumbnail = previewResult.output
+        } else {
+            previewThumbnail = nil
+        }
+        
         let totalMs = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
         timing.totalMs = totalMs
         #if DEBUG
         let label = debugLabel.map { "\($0) " } ?? ""
-        print("[CompressionKit][ImageTiming] \(label)mainRender=\(timing.mainRenderMs)ms mainEncode=\(timing.mainEncodeMs)ms thumbRender=\(timing.thumbRenderMs)ms thumbEncode=\(timing.thumbEncodeMs)ms total=\(timing.totalMs)ms source=uiimage")
+        print("[CompressionKit][ImageTiming] \(label)mainRender=\(timing.mainRenderMs)ms mainEncode=\(timing.mainEncodeMs)ms thumbRender=\(timing.thumbRenderMs)ms thumbEncode=\(timing.thumbEncodeMs)ms previewThumbnailRender=\(timing.previewThumbnailRenderMs)ms previewThumbnailEncode=\(timing.previewThumbnailEncodeMs)ms total=\(timing.totalMs)ms source=uiimage")
         #endif
         
         return ImageCompressionResult(
             mainData: main.output.data,
             thumbnailData: thumbnail?.data,
+            previewThumbnailData: previewThumbnail?.data,
             mainPixelSize: main.output.pixelSize,
             thumbnailPixelSize: thumbnail?.pixelSize,
+            previewThumbnailPixelSize: previewThumbnail?.pixelSize,
             mainQuality: main.output.quality,
             thumbnailQuality: thumbnail?.quality,
+            previewThumbnailQuality: previewThumbnail?.quality,
             mainAttempts: main.output.attempts,
             thumbnailAttempts: thumbnail?.attempts ?? 0,
+            previewThumbnailAttempts: previewThumbnail?.attempts ?? 0,
             format: options.format,
             mimeType: options.mimeType,
             fileExtension: options.fileExtension,
@@ -556,6 +628,8 @@ private struct ImageCompressionTiming {
     var mainEncodeMs = 0
     var thumbRenderMs = 0
     var thumbEncodeMs = 0
+    var previewThumbnailRenderMs = 0
+    var previewThumbnailEncodeMs = 0
     var totalMs = 0
 }
 
